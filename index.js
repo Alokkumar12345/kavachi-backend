@@ -22,6 +22,7 @@ app.get('/api/health', (req, res) => {
   const { admin } = require('./config/firebase');
   res.json({
     status: 'ok',
+    version: '1.0.2-diag',
     firebaseInitialized: !!admin.apps.length,
     environment: process.env.NODE_ENV || 'development'
   });
