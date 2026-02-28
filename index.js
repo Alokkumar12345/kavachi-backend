@@ -26,7 +26,7 @@ app.get('/api/health', (req, res) => {
 
   res.json({
     status: 'ok',
-    version: '1.0.3-cwd',
+    version: '1.0.4-fallback',
     firebaseInitialized: !!admin.apps.length,
     environment: process.env.NODE_ENV || 'development',
     cwd: process.cwd(),
@@ -39,7 +39,11 @@ app.get('/api/test-analyzer', async (req, res) => {
   const path = require('path');
   const fs = require('fs');
   const isProduction = process.env.NODE_ENV === 'production';
-  const pythonCommand = isProduction ? path.join(process.cwd(), 'venv', 'bin', 'python') : 'python';
+
+  const venvPath = path.join(process.cwd(), 'venv', 'bin', 'python');
+  let pythonCommand = isProduction ? 'python3' : 'python';
+  if (fs.existsSync(venvPath)) pythonCommand = venvPath;
+
   const scriptPath = path.join(process.cwd(), 'analyzer', 'face_analyzer.py');
 
   let stdout = '';

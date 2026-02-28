@@ -10,9 +10,14 @@ exports.analyzeFace = async (req, res) => {
             return res.status(400).json({ error: 'Gender and image are required' });
         }
 
-        // 1. Determine Python Path (Render uses venv/bin/python)
+        // 1. Determine Python Path with Fallbacks
         const isProduction = process.env.NODE_ENV === 'production';
-        const pythonCommand = isProduction ? path.join(process.cwd(), 'venv', 'bin', 'python') : 'python';
+        const venvPath = path.join(process.cwd(), 'venv', 'bin', 'python');
+        let pythonCommand = isProduction ? 'python3' : 'python';
+
+        if (require('fs').existsSync(venvPath)) {
+            pythonCommand = venvPath;
+        }
 
         const scriptPath = path.join(process.cwd(), 'analyzer', 'face_analyzer.py');
         console.log(`Spawning Python process: ${pythonCommand} ${scriptPath}`);
