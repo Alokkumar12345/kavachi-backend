@@ -1,34 +1,30 @@
-// A 1x1 black pixel base64 image
-const dummyImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+const { spawn } = require('child_process');
+const path = require('path');
 
-async function testFaceAnalyzer() {
-    console.log("Analyzing dummy image on Render...");
-    try {
-        const res = await fetch('https://kavachi-backend-1.onrender.com/api/analyze-face', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                gender: 'Men',
-                image: dummyImage
-            })
-        });
+async function testPython() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const pythonCommand = isProduction ? path.join(__dirname, 'venv', 'bin', 'python') : 'python';
+    const scriptPath = path.join(__dirname, 'analyzer', 'face_analyzer.py');
 
-        const status = res.status;
-        const text = await res.text();
-        console.log(`HTTP Status: ${status}`);
+    console.log(`Testing Python: ${pythonCommand} ${scriptPath}`);
 
-        try {
-            const data = JSON.parse(text);
-            console.log("Response JSON:", JSON.stringify(data, null, 2));
-        } catch (e) {
-            console.log("Response Text:", text);
-        }
+    const pythonProcess = spawn(pythonCommand, [scriptPath]);
+    let pythonData = '';
+    let pythonError = '';
 
-    } catch (err) {
-        console.error("Fetch failed:", err.message);
-    }
+    pythonProcess.stdout.on('data', (data) => pythonData += data.toString());
+    pythonProcess.stderr.on('data', (data) => pythonError += data.toString());
+
+    pythonProcess.on('close', (code) => {
+        console.log(`Exit Code: ${code}`);
+        console.log(`Stdout: ${pythonData}`);
+        console.log(`Stderr: ${pythonError}`);
+    });
+
+    // Send a dummy base64 blank image
+    const dummyImage = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    pythonProcess.stdin.write(dummyImage);
+    pythonProcess.stdin.end();
 }
 
-testFaceAnalyzer();
+testPython();

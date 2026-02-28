@@ -27,6 +27,37 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/api/test-analyzer', async (req, res) => {
+  const { spawn } = require('child_process');
+  const path = require('path');
+  const isProduction = process.env.NODE_ENV === 'production';
+  const pythonCommand = isProduction ? path.join(__dirname, 'venv', 'bin', 'python') : 'python';
+  const scriptPath = path.join(__dirname, 'analyzer', 'face_analyzer.py');
+
+  let stdout = '';
+  let stderr = '';
+
+  const pythonProcess = spawn(pythonCommand, [scriptPath]);
+
+  pythonProcess.stdout.on('data', (data) => stdout += data.toString());
+  pythonProcess.stderr.on('data', (data) => stderr += data.toString());
+
+  pythonProcess.on('close', (code) => {
+    res.json({
+      code,
+      stdout,
+      stderr,
+      pythonCommand,
+      scriptPath,
+      exists: require('fs').existsSync(pythonCommand)
+    });
+  });
+
+  const dummyImage = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  pythonProcess.stdin.write(dummyImage);
+  pythonProcess.stdin.end();
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
