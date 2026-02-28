@@ -12,7 +12,11 @@ exports.analyzeFace = async (req, res) => {
 
         // 1. Spawn Python Script
         const scriptPath = path.join(__dirname, '..', 'analyzer', 'face_analyzer.py');
-        const pythonProcess = spawn('python', [scriptPath]);
+        const pythonExecutable = process.env.NODE_ENV === 'production'
+            ? path.join(__dirname, '..', 'venv', 'bin', 'python')
+            : 'python';
+
+        const pythonProcess = spawn(pythonExecutable, [scriptPath]);
 
         // 2. Pass Base64 image to Python
         let pythonData = '';
