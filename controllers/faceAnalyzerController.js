@@ -10,9 +10,14 @@ exports.analyzeFace = async (req, res) => {
             return res.status(400).json({ error: 'Gender and image are required' });
         }
 
-        // 1. Spawn Python Script
+        // 1. Determine Python Path (Render uses venv/bin/python)
+        const isProduction = process.env.NODE_ENV === 'production';
+        const pythonCommand = isProduction ? path.join(__dirname, '..', 'venv', 'bin', 'python') : 'python';
+
         const scriptPath = path.join(__dirname, '..', 'analyzer', 'face_analyzer.py');
-        const pythonProcess = spawn('python', [scriptPath]);
+        console.log(`Spawning Python process: ${pythonCommand} ${scriptPath}`);
+
+        const pythonProcess = spawn(pythonCommand, [scriptPath]);
 
         // 2. Pass Base64 image to Python
         let pythonData = '';
