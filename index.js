@@ -20,23 +20,32 @@ app.use('/api/orders', require('./routes/orders'));
 
 app.get('/api/health', (req, res) => {
   const { admin } = require('./config/firebase');
+  const fs = require('fs');
+  const path = require('path');
+  const venvPath = path.join(process.cwd(), 'venv', 'bin', 'python');
+
   res.json({
     status: 'ok',
-    version: '1.0.2-diag',
+    version: '1.0.3-cwd',
     firebaseInitialized: !!admin.apps.length,
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    cwd: process.cwd(),
+    venvExists: fs.existsSync(venvPath)
   });
 });
 
 app.get('/api/test-analyzer', async (req, res) => {
   const { spawn } = require('child_process');
   const path = require('path');
+  const fs = require('fs');
   const isProduction = process.env.NODE_ENV === 'production';
-  const pythonCommand = isProduction ? path.join(__dirname, 'venv', 'bin', 'python') : 'python';
-  const scriptPath = path.join(__dirname, 'analyzer', 'face_analyzer.py');
+  const pythonCommand = isProduction ? path.join(process.cwd(), 'venv', 'bin', 'python') : 'python';
+  const scriptPath = path.join(process.cwd(), 'analyzer', 'face_analyzer.py');
 
   let stdout = '';
   let stderr = '';
+
+  if (!fs.existsSync(scriptPath)) return res.status(404).json({ error: 'Script not found at ' + scriptPath });
 
   const pythonProcess = spawn(pythonCommand, [scriptPath]);
 

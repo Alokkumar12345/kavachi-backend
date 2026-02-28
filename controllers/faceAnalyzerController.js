@@ -12,9 +12,9 @@ exports.analyzeFace = async (req, res) => {
 
         // 1. Determine Python Path (Render uses venv/bin/python)
         const isProduction = process.env.NODE_ENV === 'production';
-        const pythonCommand = isProduction ? path.join(__dirname, '..', 'venv', 'bin', 'python') : 'python';
+        const pythonCommand = isProduction ? path.join(process.cwd(), 'venv', 'bin', 'python') : 'python';
 
-        const scriptPath = path.join(__dirname, '..', 'analyzer', 'face_analyzer.py');
+        const scriptPath = path.join(process.cwd(), 'analyzer', 'face_analyzer.py');
         console.log(`Spawning Python process: ${pythonCommand} ${scriptPath}`);
 
         const pythonProcess = spawn(pythonCommand, [scriptPath]);
