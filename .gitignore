@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+.env.*
+backend_logs.txt
+firestore_error.log
+test_firebase.js
+test_firebase_auth.js
+test_firebase_auth2.js
+test_firestore.js
+test_login_repro.js
+test_env.js
+vercel_response.html
+.vercel/
+.DS_Store
