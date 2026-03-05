@@ -63,7 +63,6 @@ def analyze_image(base64_str):
         pixels = np.float32(skin_roi.reshape(-1, 3))
         
         # --- OPTIMIZATION: Simplified KMeans ---
-        # Reduce iterations and epsilon for faster extraction of dominant color
         n_colors = 1
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 5, 1.0)
         flags = cv2.KMEANS_RANDOM_CENTERS
@@ -71,36 +70,55 @@ def analyze_image(base64_str):
         
         dominant_bgr = palette[0]
         # Convert BGR to RGB
-        dominant_rgb = (int(dominant_bgr[2]), int(dominant_bgr[1]), int(dominant_bgr[0]))
+        r, g, b = (int(dominant_bgr[2]), int(dominant_bgr[1]), int(dominant_bgr[0]))
+        dominant_rgb = (r, g, b)
         
-        # Determine Tone (Simplified logic based on RGB values)
-        r, g, b = dominant_rgb
-        if r > g * 1.5 and r > b * 1.5:
-            tone = "Sun-Kissed Warmth"
-        elif b > r * 0.8 and b > g * 0.8:
-            tone = "Rosy Cool"
-        elif g > r * 1.1 and g > b * 1.1:
-            tone = "Olive Undertone"
-        elif r > 150 and g > 150 and b < 130:
-            tone = "Golden Glow"
-        elif r > g * 1.1 and r > b * 1.1 and r < 180:
-            tone = "Soft Rosy"
-        elif r < 80 and g < 80 and b < 80:
-            tone = "Deep Cocoa"
-        elif r > 200 and g > 200 and b > 200:
-            tone = "Porcelain Light"
-        elif r > 160 and g > 120 and b < 100:
-            tone = "Warm Bronze Glow"
-        elif r > 140 and g > 110 and b > 90 and r > g > b:
-            tone = "Caramel Warmth"
-        elif r > 180 and g > 170 and b > 150:
-            tone = "Soft Almond"
-        elif b > r and g > r and abs(g - b) < 20:
-            tone = "Cool Ash Undertone"
-        elif r > 130 and g > 100 and b < 110:
-            tone = "Natural Tan"
+        # --- IMPROVED CLASSIFICATION LOGIC ---
+        # 1. Intensity (Brightness)
+        brightness = (r + g + b) / 3
+        
+        # 2. Undertone Analysis (Warm vs Cool vs Neutral)
+        # Standard skin: R > G > B
+        rg_diff = r - g
+        gb_diff = g - b
+        
+        # Determine Undertone
+        if rg_diff > gb_diff + 15:
+            undertone = "Warm"
+        elif gb_diff > rg_diff + 15:
+            undertone = "Cool"
         else:
-            tone = "Balanced Neutral"
+            undertone = "Neutral"
+
+        # 3. Final Tone Assignment
+        if brightness < 80:
+            tone = f"Deep {undertone}"
+            if undertone == "Warm": tone = "Deep Cocoa"
+            elif undertone == "Cool": tone = "Cool Ebony"
+            else: tone = "Rich Espresso"
+        elif brightness < 130:
+            tone = f"Medium {undertone}"
+            if undertone == "Warm": tone = "Warm Bronze Glow"
+            elif undertone == "Cool": tone = "Rosy Cool" # This was catching too many
+            else: tone = "Natural Tan"
+        elif brightness < 180:
+            tone = f"Light-Medium {undertone}"
+            if undertone == "Warm": tone = "Caramel Warmth"
+            elif undertone == "Cool": tone = "Soft Rosy"
+            else: tone = "Balanced Neutral" # "Dull" usually falls here
+        else:
+            tone = f"Fair {undertone}"
+            if undertone == "Warm": tone = "Golden Glow"
+            elif undertone == "Cool": tone = "Porcelain Light"
+            else: tone = "Soft Almond"
+
+        # Special casing for "Sun-Kissed" if very high Red
+        if r > g * 1.35 and r > b * 1.35:
+            tone = "Sun-Kissed Warmth"
+
+        # Special casing for "Olive" if Green is high
+        if g > r * 0.95 and g > b * 1.05:
+            tone = "Olive Undertone"
             
         return {
             "success": True,

@@ -77,6 +77,9 @@ exports.analyzeFace = async (req, res) => {
             case 'Warm Bronze Glow':
             case 'Caramel Warmth':
             case 'Soft Almond':
+            case 'Deep Cocoa':
+            case 'Medium Warm':
+            case 'Fair Warm':
                 recommendedPalette = ['Terracotta', 'Warm Gold', 'Peach', 'Emerald'];
                 styleSuggestions = `Warm and rich colors complement your ${exactTone} beautifully.`;
                 mappedCategory = 'Warm';
@@ -85,14 +88,20 @@ exports.analyzeFace = async (req, res) => {
             case 'Soft Rosy':
             case 'Porcelain Light':
             case 'Cool Ash Undertone':
+            case 'Cool Ebony':
+            case 'Medium Cool':
+            case 'Fair Cool':
                 recommendedPalette = ['Rose Pink', 'Mint Blue', 'Lavender', 'Silver'];
                 styleSuggestions = `Cool, pastel, and jewel tones harmonize with your ${exactTone}.`;
                 mappedCategory = 'Cool';
                 break;
-            case 'Olive Undertone':
             case 'Natural Tan':
-            case 'Deep Cocoa':
             case 'Balanced Neutral':
+            case 'Rich Espresso':
+            case 'Deep Neutral':
+            case 'Medium Neutral':
+            case 'Fair Neutral':
+            case 'Olive Undertone':
             default:
                 recommendedPalette = ['Charcoal', 'Moss Green', 'Taupe', 'Burgundy'];
                 styleSuggestions = `Earthy and neutral shades create a stunning contrast with your ${exactTone}.`;
