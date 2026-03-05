@@ -26,15 +26,31 @@ def analyze_image(base64_str):
         target_height = int(h_orig * ratio)
         img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_AREA)
 
-        # 2. Check Lighting Conditions
+        # 2. Comprehensive Quality & Lighting Validation
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
-        avg_v = np.mean(v)
         
-        if avg_v < 40:
-            return {"error": "Image is too dark. Please ensure proper lighting."}
-        elif avg_v > 230:
-            return {"error": "Image is too bright/overexposed. Please adjust lighting."}
+        # A. Exposure Check
+        avg_v = np.mean(v)
+        if avg_v < 50:
+            return {"error": "Image is too dark. Please use better lighting."}
+        if avg_v > 220:
+            return {"error": "Image is overexposed. Please avoid direct harsh light."}
+            
+        # B. Color Cast (White Balance) Check
+        # Using Gray World Assumption principle: R, G, B means should be somewhat balanced
+        b_mean, g_mean, r_mean = cv2.mean(img)[:3]
+        total_mean = (r_mean + g_mean + b_mean) / 3
+        
+        # Check for strong tints (e.g. strong yellow/blue lighting)
+        if r_mean > total_mean * 1.4 or b_mean > total_mean * 1.4 or g_mean > total_mean * 1.4:
+             return {"error": "Strong color cast detected (unnatural lighting). Please use natural daylight."}
+
+        # C. Focus Check (Blur Detection)
+        gray_full = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        laplacian_var = cv2.Laplacian(gray_full, cv2.CV_64F).var()
+        if laplacian_var < 50:
+            return {"error": "Image is blurry. Please hold the camera still."}
 
         # 3. Detect Faces
         cascade_path = os.path.join(os.path.dirname(__file__), 'haarcascade_frontalface_default.xml')
@@ -52,29 +68,63 @@ def analyze_image(base64_str):
         elif len(faces) > 1:
             return {"error": "Multiple faces detected. Please ensure only one person is in the frame."}
             
-        # 4. Extract Skin Tone
+        # 4. Filter Detection & Obstruction Check
         (x, y, w, h) = faces[0]
-        # Crop to the center-top of the face (usually forehead/cheeks) to avoid hair/beard
-        skin_roi = img[int(y + h * 0.2):int(y + h * 0.5), int(x + w * 0.3):int(x + w * 0.7)]
+        face_roi = img[y:y+h, x:x+w]
         
-        if skin_roi.size == 0:
-            return {"error": "Could not extract skin region."}
+        # A. Beauty Filter Detection (Texture Smoothness)
+        # Filters often reduce high-frequency detail.
+        # We calculate the standard deviation of the Laplacian of the skin region.
+        # Natural skin has a certain 'grain'.
+        face_gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+        texture_var = cv2.Laplacian(face_gray, cv2.CV_64F).var()
+        if texture_var < 35: # Threshold for 'too smooth'
+             return {"error": "Beauty filter or heavy smoothing detected. Please disable filters."}
+             
+        # B. Obstruction Detection (Eyes/Glasses)
+        eye_cascade_path = os.path.join(os.path.dirname(__file__), 'haarcascade_eye.xml')
+        # We'll check if eyes are detectable (not blocked by sunglasses/hair)
+        eye_cascade = cv2.CascadeClassifier(eye_cascade_path)
+        if not eye_cascade.empty():
+            eyes = eye_cascade.detectMultiScale(face_gray, 1.3, 5)
+            if len(eyes) < 1:
+                 return {"error": "Face obstructed or eyes not visible. Please remove glasses/hat."}
+
+        # 5. Extract Skin Tone with Refined Sampling
+        # Forehead (Upper 20-40% height, Center 40% width)
+        forehead_y1, forehead_y2 = int(y + h * 0.15), int(y + h * 0.35)
+        forehead_x1, forehead_x2 = int(x + w * 0.3), int(x + w * 0.7)
+        
+        # Cheeks (Middle 40-60% height, Sides)
+        cheek_y1, cheek_y2 = int(y + h * 0.45), int(y + h * 0.65)
+        l_cheek_x1, l_cheek_x2 = int(x + w * 0.2), int(x + w * 0.4)
+        r_cheek_x1, r_cheek_x2 = int(x + w * 0.6), int(x + w * 0.8)
+
+        # Sample and Combine
+        samples = []
+        samples.append(img[forehead_y1:forehead_y2, forehead_x1:forehead_x2])
+        samples.append(img[cheek_y1:cheek_y2, l_cheek_x1:l_cheek_x2])
+        samples.append(img[cheek_y1:cheek_y2, r_cheek_x1:r_cheek_x2])
+        
+        # Combine valid samples
+        combined_pixels = []
+        for s in samples:
+            if s.size > 0:
+                combined_pixels.append(s.reshape(-1, 3))
+        
+        if not combined_pixels:
+            return {"error": "Could not extract skin region samples."}
             
-        # 4. Extract Skin Tone
-        (x, y, w, h) = faces[0]
-        # Crop to the center-top of the face (usually forehead/cheeks) to avoid hair/beard
-        skin_roi = img[int(y + h * 0.2):int(y + h * 0.5), int(x + w * 0.3):int(x + w * 0.7)]
-        
-        if skin_roi.size == 0:
-            return {"error": "Could not extract skin region."}
+        skin_pixels = np.vstack(combined_pixels)
+        # Use average for ITA calculation
+        mean_bgr = np.mean(skin_pixels, axis=0)
+        skin_roi_mean = np.uint8([[mean_bgr]]) # 1x1 image for conversion
             
         # --- DEFINITIVE LIGHTING-INVARIANT LOGIC (LAB & ITA) ---
-        # Switch to CIE L*a*b* color space
+        # Switch to CIE L*a*b* color space using the 1x1 mean image
         # L* = Lightness, a* = Green/Red, b* = Blue/Yellow
-        lab_roi = cv2.cvtColor(skin_roi, cv2.COLOR_BGR2Lab)
-        
-        # Calculate mean Values
-        mean_l, mean_a, mean_b = cv2.mean(lab_roi)[:3]
+        lab_pixel = cv2.cvtColor(skin_roi_mean, cv2.COLOR_BGR2Lab)[0][0]
+        mean_l, mean_a, mean_b = lab_pixel
         
         # 1. ITA Calculation (Individual Typology Angle)
         # ITA = arctan((L - 50) / b) * (180 / pi)
@@ -140,9 +190,10 @@ def analyze_image(base64_str):
             tone = "Olive Undertone"
             
         # ROI for returning to frontend (for visual reference)
-        pixels = np.float32(skin_roi.reshape(-1, 3))
+        # Using KMeans on the stacked sampled pixels to find dominant color
+        pixels_float = np.float32(skin_pixels)
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 5, 1.0)
-        _, labels, palette = cv2.kmeans(pixels, 1, None, criteria, 1, cv2.KMEANS_RANDOM_CENTERS)
+        _, labels, palette = cv2.kmeans(pixels_float, 1, None, criteria, 1, cv2.KMEANS_RANDOM_CENTERS)
         dominant_bgr = palette[0]
         dominant_rgb = (int(dominant_bgr[2]), int(dominant_bgr[1]), int(dominant_bgr[0]))
             
