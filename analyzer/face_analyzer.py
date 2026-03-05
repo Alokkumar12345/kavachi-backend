@@ -60,44 +60,69 @@ def analyze_image(base64_str):
         if skin_roi.size == 0:
             return {"error": "Could not extract skin region."}
             
-        # --- IMPROVED CLASSIFICATION LOGIC (YCrCb) ---
-        # YCrCb separates Luminance (Y) from Chrominance (Cr and Cb)
-        # This makes undertone detection more resistant to brightness changes.
-        ycrcb_roi = cv2.cvtColor(skin_roi, cv2.COLOR_BGR2YCrCb)
+        # 4. Extract Skin Tone
+        (x, y, w, h) = faces[0]
+        # Crop to the center-top of the face (usually forehead/cheeks) to avoid hair/beard
+        skin_roi = img[int(y + h * 0.2):int(y + h * 0.5), int(x + w * 0.3):int(x + w * 0.7)]
         
-        # Calculate mean values for the ROI
-        mean_y, mean_cr, mean_cb = cv2.mean(ycrcb_roi)[:3]
+        if skin_roi.size == 0:
+            return {"error": "Could not extract skin region."}
+            
+        # --- DEFINITIVE LIGHTING-INVARIANT LOGIC (LAB & ITA) ---
+        # Switch to CIE L*a*b* color space
+        # L* = Lightness, a* = Green/Red, b* = Blue/Yellow
+        lab_roi = cv2.cvtColor(skin_roi, cv2.COLOR_BGR2Lab)
         
-        # 1. Intensity (using Y channel - Luminance)
-        intensity = mean_y
+        # Calculate mean Values
+        mean_l, mean_a, mean_b = cv2.mean(lab_roi)[:3]
         
-        # 2. Undertone Analysis (using Cr and Cb - Chromacity)
-        # Cr represents Red-difference (higher Cr = more Warm/Red)
-        # Cb represents Blue-difference (higher Cb = more Cool/Blue)
+        # 1. ITA Calculation (Individual Typology Angle)
+        # ITA = arctan((L - 50) / b) * (180 / pi)
+        # Higher ITA (>55) is Very Light, lower is Dark.
+        # It is highly resistant to lighting intensity (brightness) changes.
+        import math
+        # Prevent division by zero and handle scale (OpenCV L is 0-255, b is 0-255)
+        # Convert OpenCV scale back to standard LAB scale:
+        # L [0, 100], a [-128, 127], b [-128, 127]
+        l_std = (mean_l * 100.0) / 255.0
+        b_std = mean_b - 128.0
         
-        # Typical skin range: Cr [133, 173], Cb [77, 127]
-        # Undertone Metric: Chromacity Difference
-        chroma_diff = mean_cr - mean_cb
+        # Calculate ITA
+        ita = math.atan2((l_std - 50.0), b_std) * (180.0 / math.pi)
         
-        # Thresholds derived from skin tone studies:
-        # Higher chroma_diff (more Cr than Cb) = Warm
-        if chroma_diff > 45:
+        # 2. Undertone Analysis (using normalized a* and b*)
+        # a* > 0 is Reddish/Pink (Cool), b* > 0 is Yellowish/Golden (Warm)
+        a_std = mean_a - 128.0
+        
+        # Undertone metric (Warmth Index)
+        # Usually, Warm skin has b > a by a significant margin
+        warmth_index = b_std - a_std
+        
+        if warmth_index > 12:
             undertone = "Warm"
-        elif chroma_diff < 30:
+        elif warmth_index < 0:
             undertone = "Cool"
         else:
             undertone = "Neutral"
 
-        # 3. Final Tone Assignment based on Intensity (Y) and Undertone
-        if intensity < 80:
+        # 3. Final Tone Assignment based on ITA (Skin Group) and Undertone
+        # Standard ITA Ranges:
+        # > 55: Very Light
+        # 41 to 55: Light
+        # 28 to 41: Intermediate (Medium)
+        # 10 to 28: Tan
+        # -30 to 10: Brown
+        # < -30: Dark
+        
+        if ita < 10:
             if undertone == "Warm": tone = "Deep Cocoa"
             elif undertone == "Cool": tone = "Cool Ebony"
             else: tone = "Rich Espresso"
-        elif intensity < 125:
+        elif ita < 28:
             if undertone == "Warm": tone = "Warm Bronze Glow"
             elif undertone == "Cool": tone = "Rosy Cool"
             else: tone = "Natural Tan"
-        elif intensity < 170:
+        elif ita < 50:
             if undertone == "Warm": tone = "Caramel Warmth"
             elif undertone == "Cool": tone = "Soft Rosy"
             else: tone = "Balanced Neutral"
@@ -106,17 +131,15 @@ def analyze_image(base64_str):
             elif undertone == "Cool": tone = "Porcelain Light"
             else: tone = "Soft Almond"
 
-        # Special casing for "Sun-Kissed" if Cr is very high (High Red component)
-        if mean_cr > 165:
+        # Special Refinement for "Sun-Kissed" (Very high Warmth)
+        if warmth_index > 25:
             tone = "Sun-Kissed Warmth"
 
-        # Special casing for "Olive" 
-        # Olive skin has a unique YCrCb signature (often lower Cr than typical warm)
-        if undertone == "Neutral" and mean_cr < 145 and mean_cb < 110:
+        # Special Refinement for "Olive" (Medium ITA but lower warmth)
+        if 28 < ita < 45 and warmth_index < 5 and a_std < 0:
             tone = "Olive Undertone"
             
-        # Dominant RGB for returning to frontend (for visual reference)
-        # We still calculate this for the response
+        # ROI for returning to frontend (for visual reference)
         pixels = np.float32(skin_roi.reshape(-1, 3))
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 5, 1.0)
         _, labels, palette = cv2.kmeans(pixels, 1, None, criteria, 1, cv2.KMEANS_RANDOM_CENTERS)
