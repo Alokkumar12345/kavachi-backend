@@ -22,6 +22,7 @@ exports.analyzeFace = async (req, res) => {
         const scriptPath = path.join(process.cwd(), 'analyzer', 'face_analyzer.py');
         console.log(`Spawning Python process: ${pythonCommand} ${scriptPath}`);
 
+        console.time('python-analysis');
         const pythonProcess = spawn(pythonCommand, [scriptPath]);
 
         // 2. Pass Base64 image to Python
@@ -58,6 +59,7 @@ exports.analyzeFace = async (req, res) => {
         });
 
         const cvResult = await pythonPromise;
+        console.timeEnd('python-analysis');
         const skinTone = cvResult.detectedTone || 'Medium'; // Fallback
         console.log(`ML Detected Skin Tone: ${skinTone}`);
 

@@ -18,6 +18,14 @@ def analyze_image(base64_str):
         if img is None:
             return {"error": "Could not decode image."}
 
+        # --- OPTIMIZATION: Immediate Resizing ---
+        # Resizing the image to a smaller width significantly speeds up face detection
+        target_width = 400
+        h_orig, w_orig = img.shape[:2]
+        ratio = target_width / float(w_orig)
+        target_height = int(h_orig * ratio)
+        img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_AREA)
+
         # 2. Check Lighting Conditions
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
@@ -36,7 +44,8 @@ def analyze_image(base64_str):
             return {"error": "Internal Error: Haar cascade file not found."}
             
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+        # Optimized detectMultiScale parameters
+        faces = face_cascade.detectMultiScale(gray, 1.2, 5, minSize=(30, 30))
         
         if len(faces) == 0:
             return {"error": "No face detected. Please face the camera directly."}
@@ -53,11 +62,12 @@ def analyze_image(base64_str):
             
         pixels = np.float32(skin_roi.reshape(-1, 3))
         
-        # KMeans to find dominant color
+        # --- OPTIMIZATION: Simplified KMeans ---
+        # Reduce iterations and epsilon for faster extraction of dominant color
         n_colors = 1
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, .1)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 5, 1.0)
         flags = cv2.KMEANS_RANDOM_CENTERS
-        _, labels, palette = cv2.kmeans(pixels, n_colors, None, criteria, 10, flags)
+        _, labels, palette = cv2.kmeans(pixels, n_colors, None, criteria, 1, flags)
         
         dominant_bgr = palette[0]
         # Convert BGR to RGB
