@@ -60,65 +60,68 @@ def analyze_image(base64_str):
         if skin_roi.size == 0:
             return {"error": "Could not extract skin region."}
             
-        pixels = np.float32(skin_roi.reshape(-1, 3))
+        # --- IMPROVED CLASSIFICATION LOGIC (YCrCb) ---
+        # YCrCb separates Luminance (Y) from Chrominance (Cr and Cb)
+        # This makes undertone detection more resistant to brightness changes.
+        ycrcb_roi = cv2.cvtColor(skin_roi, cv2.COLOR_BGR2YCrCb)
         
-        # --- OPTIMIZATION: Simplified KMeans ---
-        n_colors = 1
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 5, 1.0)
-        flags = cv2.KMEANS_RANDOM_CENTERS
-        _, labels, palette = cv2.kmeans(pixels, n_colors, None, criteria, 1, flags)
+        # Calculate mean values for the ROI
+        mean_y, mean_cr, mean_cb = cv2.mean(ycrcb_roi)[:3]
         
-        dominant_bgr = palette[0]
-        # Convert BGR to RGB
-        r, g, b = (int(dominant_bgr[2]), int(dominant_bgr[1]), int(dominant_bgr[0]))
-        dominant_rgb = (r, g, b)
+        # 1. Intensity (using Y channel - Luminance)
+        intensity = mean_y
         
-        # --- IMPROVED CLASSIFICATION LOGIC ---
-        # 1. Intensity (Brightness)
-        brightness = (r + g + b) / 3
+        # 2. Undertone Analysis (using Cr and Cb - Chromacity)
+        # Cr represents Red-difference (higher Cr = more Warm/Red)
+        # Cb represents Blue-difference (higher Cb = more Cool/Blue)
         
-        # 2. Undertone Analysis (Warm vs Cool vs Neutral)
-        # Standard skin: R > G > B
-        rg_diff = r - g
-        gb_diff = g - b
+        # Typical skin range: Cr [133, 173], Cb [77, 127]
+        # Undertone Metric: Chromacity Difference
+        chroma_diff = mean_cr - mean_cb
         
-        # Determine Undertone
-        if rg_diff > gb_diff + 15:
+        # Thresholds derived from skin tone studies:
+        # Higher chroma_diff (more Cr than Cb) = Warm
+        if chroma_diff > 45:
             undertone = "Warm"
-        elif gb_diff > rg_diff + 15:
+        elif chroma_diff < 30:
             undertone = "Cool"
         else:
             undertone = "Neutral"
 
-        # 3. Final Tone Assignment
-        if brightness < 80:
-            tone = f"Deep {undertone}"
+        # 3. Final Tone Assignment based on Intensity (Y) and Undertone
+        if intensity < 80:
             if undertone == "Warm": tone = "Deep Cocoa"
             elif undertone == "Cool": tone = "Cool Ebony"
             else: tone = "Rich Espresso"
-        elif brightness < 130:
-            tone = f"Medium {undertone}"
+        elif intensity < 125:
             if undertone == "Warm": tone = "Warm Bronze Glow"
-            elif undertone == "Cool": tone = "Rosy Cool" # This was catching too many
+            elif undertone == "Cool": tone = "Rosy Cool"
             else: tone = "Natural Tan"
-        elif brightness < 180:
-            tone = f"Light-Medium {undertone}"
+        elif intensity < 170:
             if undertone == "Warm": tone = "Caramel Warmth"
             elif undertone == "Cool": tone = "Soft Rosy"
-            else: tone = "Balanced Neutral" # "Dull" usually falls here
+            else: tone = "Balanced Neutral"
         else:
-            tone = f"Fair {undertone}"
             if undertone == "Warm": tone = "Golden Glow"
             elif undertone == "Cool": tone = "Porcelain Light"
             else: tone = "Soft Almond"
 
-        # Special casing for "Sun-Kissed" if very high Red
-        if r > g * 1.35 and r > b * 1.35:
+        # Special casing for "Sun-Kissed" if Cr is very high (High Red component)
+        if mean_cr > 165:
             tone = "Sun-Kissed Warmth"
 
-        # Special casing for "Olive" if Green is high
-        if g > r * 0.95 and g > b * 1.05:
+        # Special casing for "Olive" 
+        # Olive skin has a unique YCrCb signature (often lower Cr than typical warm)
+        if undertone == "Neutral" and mean_cr < 145 and mean_cb < 110:
             tone = "Olive Undertone"
+            
+        # Dominant RGB for returning to frontend (for visual reference)
+        # We still calculate this for the response
+        pixels = np.float32(skin_roi.reshape(-1, 3))
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 5, 1.0)
+        _, labels, palette = cv2.kmeans(pixels, 1, None, criteria, 1, cv2.KMEANS_RANDOM_CENTERS)
+        dominant_bgr = palette[0]
+        dominant_rgb = (int(dominant_bgr[2]), int(dominant_bgr[1]), int(dominant_bgr[0]))
             
         return {
             "success": True,
